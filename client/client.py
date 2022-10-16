@@ -1,4 +1,3 @@
-from importlib.resources import contents, path
 import os
 import sys
 import socket
@@ -7,9 +6,6 @@ import string
 import ctypes
 import hashlib
 from time import sleep
-from tkinter import font
-from turtle import st
-from xml.dom import ValidationErr
 import pygame
 import numpy as np
 import pygame_gui
@@ -18,8 +14,7 @@ from enum import IntEnum
 from pygame_gui.ui_manager import UIManager
 from pygame_gui.elements import *
 from pygame_gui.windows import *
-import tkinter as tk
-from tkinter.filedialog import askopenfilename
+from pygame_gui._constants import UI_FILE_DIALOG_PATH_PICKED
 import pyperclip
 
 SERVER_ACTION_FINISHED = pygame.event.custom_type()
@@ -484,7 +479,9 @@ class GamePanel(UIPanel):
 
 class SubmissionPanel(UIPanel):
     def __init__(self, app_window_size, ui_manager):
-        self.window_rect = pygame.Rect((app_window_size[0] / 2, 0), (app_window_size[0] / 2, app_window_size[1]))
+        self.ui_manager = ui_manager
+        self.app_window_size = app_window_size
+        self.window_rect = pygame.Rect((self.app_window_size[0] / 2, 0), (self.app_window_size[0] / 2, self.app_window_size[1]))
         super().__init__(self.window_rect,
                          0,
                          ui_manager, 
@@ -492,71 +489,93 @@ class SubmissionPanel(UIPanel):
         
         self.game_surface_size = self.get_container().get_size()
 
-        self.open_file_button_size = (100, 40)
-        self.open_file_button_pos = np.divide(np.subtract(self.game_surface_size, self.open_file_button_size), (7, 1))
-        self.open_file_button = UIButton(pygame.Rect(self.open_file_button_pos, self.open_file_button_size),
+        self.open_file_button_rect = pygame.Rect(np.divide(np.subtract(self.game_surface_size, (100, 40)), (7, 1)), (100, 40))
+        self.open_file_button = UIButton(self.open_file_button_rect,
                                          'Open File',
                                          manager=ui_manager,
                                          container=self,
                                          parent_element=self,
                                          object_id="#open_file_button")
         
-        self.submit_button_size = (100, 40)
-        self.submit_button_pos = np.divide(np.subtract(self.game_surface_size, self.submit_button_size), (3, 1))
-        self.submit_button = UIButton(pygame.Rect(self.submit_button_pos, self.submit_button_size),
+        self.submit_button_rect = pygame.Rect(np.divide(np.subtract(self.game_surface_size, (100, 40)), (3, 1)), (100, 40))
+        self.submit_button = UIButton(self.submit_button_rect,
                                       'Submit',
                                       manager=ui_manager,
                                       container=self,
                                       parent_element=self,
                                       object_id="#submit_button")
 
-        self.load_last_submit_button_size = (200, 40)
-        self.load_last_submit_button_pos = np.divide(np.subtract(self.game_surface_size, self.load_last_submit_button_size), (1.65, 1))
-        self.load_last_submit_button = UIButton(pygame.Rect(self.load_last_submit_button_pos, self.load_last_submit_button_size),
+        self.load_last_submit_button_rect = pygame.Rect(np.divide(np.subtract(self.game_surface_size, (200, 40)), (1.65, 1)), (200, 40))
+        self.load_last_submit_button = UIButton(self.load_last_submit_button_rect,
                                                 'Load Last Submission',
                                                 manager=ui_manager,
                                                 container=self,
                                                 parent_element=self,
                                                 object_id="#load_last_submission_button")
         
-        self.copy_contents_button_size = (150, 40)
-        self.copy_contents_button_pos = np.divide(np.subtract(self.game_surface_size, self.copy_contents_button_size), (1.1, 1))
-        self.copy_contents_button = UIButton(pygame.Rect(self.copy_contents_button_pos, self.copy_contents_button_size),
+        self.copy_contents_button_rect = pygame.Rect(np.divide(np.subtract(self.game_surface_size, (150, 40)), (1.1, 1)), (150, 40))
+        self.copy_contents_button = UIButton(self.copy_contents_button_rect,
                                              'Copy Contents',
                                              manager=ui_manager,
                                              container=self,
                                              parent_element=self,
                                              object_id="#copy_contents_button")
         
-        self.submission_text_size = (self.window_rect.width - 100, self.window_rect.height - 100)
-        self.submission_text_pos = (50, 30)
-        self.submission_text = UITextBox('', pygame.Rect(self.submission_text_pos, self.submission_text_size),
-                                            manager=ui_manager,
-                                            container=self,
-                                            parent_element=self,
-                                            object_id="submission_text")
+        self.submission_text_rect = pygame.Rect((50, 30), (self.window_rect.width - 100, self.window_rect.height - 100))
+        self.submission_text = UITextBox('', 
+                                         self.submission_text_rect,
+                                         manager=ui_manager,
+                                         container=self,
+                                         parent_element=self,
+                                         object_id="submission_text")
 
 
-        self.message_label_pos = (self.submission_text_pos[0] + self.submission_text_size[0] / 2 - 50, self.submission_text_pos[1] + self.submission_text_size[1]) 
-        self.message_label = UILabel(pygame.Rect(self.message_label_pos, (-1, -1)),
+        self.message_label_rect = pygame.Rect((0, 0), (-1, -1))
+        self.message_label_rect.centerx = self.submission_text_rect.centerx
+        self.message_label_rect.top = self.submission_text_rect.bottom
+        self.message_label = UILabel(self.message_label_rect,
                                      '',
                                      manager=ui_manager,
                                      container=self,
                                      parent_element=self,
                                      )
         
+
+    def _show_message(self, txt):
+        self.message_label.set_relative_position((self.message_label_rect.left - len(txt)*4, self.message_label_rect.top)) # 4 is the magic number
+        self.message_label.set_text(txt)
+        sleep(2)
+        self.message_label.set_text('')
+    
     def validate_submission(self, contents) -> int:
         if contents == '':
             message_thread = threading.Thread(target=self._show_message, args=['Your algorithm is empty!'])
             message_thread.start()
-            return 1
+            return False
         
-        return 0
+        return True
 
-    def _show_message(self, txt):
-        self.message_label.set_text(txt)
-        sleep(2)
-        self.message_label.set_text('')
+    def validate_path(self, path: str) :
+        if not path.endswith('.py'):
+            message_thread = threading.Thread(target=self._show_message, args=['You algorithm has to be a python file (.py)'])
+            message_thread.start()
+            return False
+        return True
+
+    def create_file_dialog(self, inital_path=''):
+        self.file_dialog_rect = pygame.Rect((0, 0), (self.app_window_size[0]/2, 800))
+        self.file_dialog_rect.topleft = (self.app_window_size[0]/4, 100)
+        if inital_path != '':
+            self.file_dialog = UIFileDialog(self.file_dialog_rect,
+                                            manager=self.ui_manager,
+                                            initial_file_path=inital_path,
+                                            allow_existing_files_only=True,
+                                            object_id="file_dialog")
+        else:
+            self.file_dialog = UIFileDialog(self.file_dialog_rect,
+                                            manager=self.ui_manager,
+                                            allow_existing_files_only=True,
+                                            object_id="file_dialog")
 
     def process_event(self, event):
         if event.type == pygame_gui.UI_BUTTON_PRESSED and \
@@ -569,22 +588,24 @@ class SubmissionPanel(UIPanel):
             if event.response_code == 0:
                 default_path = event.response
                 if default_path == "" or not os.path.exists(default_path):
-                    path = askopenfilename(filetypes=(("python files", "*.py"), ("text files", "*.txt")))
+                    self.create_file_dialog()
                 else:
-                    path = askopenfilename(initialdir=default_path, filetypes=(("python files", "*.py"), ("text files", "*.txt")))
-                if len(path) > 0:
-                    with open(path, "r") as subb:
-                        text = subb.read()
-                        text = text.replace('\n', '<br>')
-                        self.submission_text.set_text(text)
-                    ServerComm.set_default_path(path)
-                
+                    self.create_file_dialog(inital_path=default_path)
+            
             self.open_file_button.enable()
+        elif event.type == UI_FILE_DIALOG_PATH_PICKED:
+            path = event.text.replace('\\','/')
+            if self.validate_path(path):
+                with open(path, "r") as subb:
+                    text = subb.read()
+                    text = text.replace('\n', '<br>')
+                    self.submission_text.set_text(text)
+                ServerComm.set_default_path(path)
         elif event.type == pygame_gui.UI_BUTTON_PRESSED and \
             event.ui_object_id == "#submission_panel.#submit_button" and \
             event.ui_element == self.submit_button:
             submission = self.submission_text.html_text.replace('<br>','\n')
-            if self.validate_submission(submission) == 0:
+            if self.validate_submission(submission) :
                 ServerComm.submit(submission)
         elif event.type == SERVER_ACTION_FINISHED and \
             event.action_type == RequestType.SUBMIT:
@@ -671,7 +692,6 @@ class BorgleApp:
 # TITLE OF CANVAS
 
 if __name__ == '__main__':
-    tk.Tk().withdraw()
     ServerComm.connect()
     app = BorgleApp()
     app.auto_login()
