@@ -1,10 +1,15 @@
+from importlib.resources import contents, path
+import os
 import sys
 import socket
 import threading
 import string
 import ctypes
 import hashlib
+from time import sleep
+from tkinter import font
 from turtle import st
+from xml.dom import ValidationErr
 import pygame
 import numpy as np
 import pygame_gui
@@ -12,6 +17,9 @@ from enum import IntEnum
 
 from pygame_gui.ui_manager import UIManager
 from pygame_gui.elements import *
+import tkinter as tk
+from tkinter.filedialog import askopenfilename
+import pyperclip
 
 SERVER_ACTION_FINISHED = pygame.event.custom_type()
 
@@ -19,9 +27,12 @@ class RequestType(IntEnum):
     REGISTER = 0
     LOGIN = 1
     RIVALS_LIST = 2
-    SUBMIT = 3
-    FIGHT = 4
-    LOGOUT = 5
+    GET_DEFAULT_PATH = 3
+    SET_DEFAULT_PATH = 4
+    SUBMIT = 5
+    FIGHT = 6
+    LOGOUT = 7
+    LOAD_LAST_SUBMISSION = 8
 
 def post_action_finished(action_type: RequestType, response_code, response):
     event_data = {
@@ -53,8 +64,8 @@ class ServerComm:
     
     def connect():
         if not ServerComm.connected:
-            connection_thread = threading.Thread(target=ServerComm._connect)
-            connection_thread.start()
+            ServerComm.connection_thread = threading.Thread(target=ServerComm._connect)
+            ServerComm.connection_thread.start()
     
     def _authenticate(username, password, action_type):
         sha_encryption = hashlib.new('sha256')
@@ -84,6 +95,59 @@ class ServerComm:
     def get_rivals_list():
         get_rivals_list_thread = threading.Thread(target=ServerComm._get_rivals_list)
         get_rivals_list_thread.start()
+
+    def _get_default_path():
+        ServerComm.client_socket.send(bytes([RequestType.GET_DEFAULT_PATH.value]))
+        response_code = ServerComm.client_socket.recv(1)[0]
+        response_msg = ServerComm.client_socket.recv(2048).decode()
+        print(f'Server sent response code {response_code} with response message: {response_msg}')
+        post_action_finished(RequestType.GET_DEFAULT_PATH, response_code, response_msg)
+
+    def get_default_path():
+        get_default_path_thread = threading.Thread(target=ServerComm._get_default_path)
+        get_default_path_thread.start()
+
+    def _set_default_path(new_path):
+        ServerComm.client_socket.send(bytes([RequestType.SET_DEFAULT_PATH.value]))
+        ServerComm.client_socket.send(new_path.encode())
+        response_code = ServerComm.client_socket.recv(1)[0]
+        response_msg = ServerComm.client_socket.recv(2048).decode()
+        print(f'Server sent response code {response_code} with response message: {response_msg}')
+        post_action_finished(RequestType.SET_DEFAULT_PATH, response_code, response_msg)
+
+    def set_default_path(new_path):
+        set_default_path_thread = threading.Thread(target=ServerComm._set_default_path, args=[new_path])
+        set_default_path_thread.start()
+
+    def _submit(file_contents):
+        ServerComm.client_socket.send(bytes([RequestType.SUBMIT.value]))
+        ServerComm.client_socket.send(len(file_contents).to_bytes(4,'little'))
+        ServerComm.client_socket.send(file_contents.encode())
+        response_code = ServerComm.client_socket.recv(1)[0]
+        response_msg = ServerComm.client_socket.recv(2048).decode()
+        print(f'Server sent response code {response_code} with response message: {response_msg}')
+        post_action_finished(RequestType.SUBMIT, response_code, response_msg)
+
+    def submit(file_contents):
+        submit_thread = threading.Thread(target=ServerComm._submit, args=[file_contents])
+        submit_thread.start()
+
+    def _load_last_submission():
+        ServerComm.client_socket.send(bytes([RequestType.LOAD_LAST_SUBMISSION.value]))
+        response_code = ServerComm.client_socket.recv(1)[0]
+        size = int.from_bytes(ServerComm.client_socket.recv(4), 'little')
+        byte_counter = 0
+        contents = ''
+        while byte_counter < size:
+            data = ServerComm.client_socket.recv(1024).decode()
+            byte_counter += len(data)
+            contents += data
+        response_msg = contents
+        post_action_finished(RequestType.LOAD_LAST_SUBMISSION, response_code, response_msg)
+
+    def load_last_submission():
+        load_last_submission_thread = threading.Thread(target=ServerComm._load_last_submission)
+        load_last_submission_thread.start()
 
 ServerComm.connected = False
 
@@ -236,6 +300,7 @@ class LoginWindow(UIWindow):
             self.message_label.set_text(event.response)
             if event.response_code == 0:
                 self.hide()
+
         
     def update(self, time_delta):
         super().update(time_delta)
@@ -387,7 +452,131 @@ class GamePanel(UIPanel):
     pass
 
 class SubmissionPanel(UIPanel):
-    pass
+    def __init__(self, app_window_size, ui_manager):
+        self.window_size = (app_window_size[0]/2,app_window_size[1])
+        self.window_position = (app_window_size[0]/2,0)
+        super().__init__(pygame.Rect(self.window_position, self.window_size),0, ui_manager, 
+                        object_id='#submission_panel')
+        
+        game_surface_size = self.get_container().get_size()
+
+        self.open_file_button_size = (100,40)
+        self.open_file_button_pos = np.divide(np.subtract(game_surface_size, self.open_file_button_size), (7, 1))
+        self.open_file_button = UIButton(pygame.Rect(self.open_file_button_pos, self.open_file_button_size),
+                                        'Open File',
+                                        manager=ui_manager,
+                                        container=self,
+                                        parent_element=self,
+                                        object_id="#open_file_button")
+        
+        self.submit_button_size = (100,40)
+        self.submit_button_pos = np.divide(np.subtract(game_surface_size, self.submit_button_size), (3, 1))
+        self.submit_button = UIButton(pygame.Rect(self.submit_button_pos, self.submit_button_size),
+                                        'Submit',
+                                        manager=ui_manager,
+                                        container=self,
+                                        parent_element=self,
+                                        object_id="#submit_button")
+
+        self.load_last_submit_button_size = (200,40)
+        self.load_last_submit_button_pos = np.divide(np.subtract(game_surface_size, self.load_last_submit_button_size), (1.65, 1))
+        self.load_last_submit_button = UIButton(pygame.Rect(self.load_last_submit_button_pos, self.load_last_submit_button_size),
+                                        'Load Last Submission',
+                                        manager=ui_manager,
+                                        container=self,
+                                        parent_element=self,
+                                        object_id="#load_last_submission_button")
+        self.copy_contents_button_size = (150,40)
+        self.copy_contents_button_pos = np.divide(np.subtract(game_surface_size, self.copy_contents_button_size), (1.1, 1))
+        self.copy_contents_button = UIButton(pygame.Rect(self.copy_contents_button_pos, self.copy_contents_button_size),
+                                        'Copy Contents',
+                                        manager=ui_manager,
+                                        container=self,
+                                        parent_element=self,
+                                        object_id="#copy_contents_button")
+        
+        self.submission_text_size = (self.window_size[0]-100,self.window_size[1]-100)
+        self.submission_text_pos = (50,30)
+        self.submission_text = UITextBox('', pygame.Rect(self.submission_text_pos, self.submission_text_size),
+                                            manager=ui_manager,
+                                            container=self,
+                                            parent_element=self,
+                                            object_id="submission_text")
+
+
+        self.message_label_pos = (self.submission_text_pos[0] + self.submission_text_size[0]/2 - 50, self.submission_text_pos[1] + self.submission_text_size[1] ) 
+        self.message_label = UILabel(pygame.Rect(self.message_label_pos, (-1, -1)),
+                                     '',
+                                     manager=ui_manager,
+                                     container=self,
+                                     parent_element=self,
+                                     )
+        
+    def validate_submission(self, contents) -> int:
+        if contents == '':
+            message_thread = threading.Thread(target=self._show_message, args=['Your algorithm is empty!'])
+            message_thread.start()
+            return 1
+        
+        return 0
+
+    def _show_message(self, txt):
+        self.message_label.set_text(txt)
+        sleep(2)
+        self.message_label.set_text('')
+
+    def process_event(self, event):
+        if event.type == pygame_gui.UI_BUTTON_PRESSED and \
+            event.ui_object_id == "#submission_panel.#open_file_button" and \
+            event.ui_element == self.open_file_button:
+            self.open_file_button.disable()
+            ServerComm.get_default_path()
+        elif event.type == SERVER_ACTION_FINISHED and \
+            event.action_type == RequestType.GET_DEFAULT_PATH:
+            if event.response_code == 0:
+                default_path = event.response
+                if default_path == "" or not os.path.exists(default_path):
+                    path = askopenfilename(filetypes=(("python files", "*.py"), ("text files", "*.txt")))
+                else:
+                    path = askopenfilename(initialdir=default_path, filetypes=(("python files", "*.py"), ("text files", "*.txt")))
+                if len(path) > 0:
+                    with open(path, "r") as subb:
+                        text = subb.read()
+                        text = text.replace('\n', '<br>')
+                        self.submission_text.set_text(text)
+                    ServerComm.set_default_path(path)
+                
+            self.open_file_button.enable()
+        elif event.type == pygame_gui.UI_BUTTON_PRESSED and \
+            event.ui_object_id == "#submission_panel.#submit_button" and \
+            event.ui_element == self.submit_button:
+            submission = self.submission_text.html_text.replace('<br>','\n')
+            if self.validate_submission(submission) == 0:
+                ServerComm.submit(submission)
+        elif event.type == SERVER_ACTION_FINISHED and \
+            event.action_type == RequestType.SUBMIT:
+            message_thread = threading.Thread(target=self._show_message, args=[event.response])
+            message_thread.start()
+        elif event.type == pygame_gui.UI_BUTTON_PRESSED and \
+            event.ui_object_id == "#submission_panel.#load_last_submission_button" and \
+            event.ui_element == self.load_last_submit_button:
+            self.load_last_submit_button.disable()
+            ServerComm.load_last_submission()
+        elif event.type == SERVER_ACTION_FINISHED and \
+            event.action_type == RequestType.LOAD_LAST_SUBMISSION:
+            self.submission_text.set_text(event.response.replace('\n','<br>'))
+            self.load_last_submit_button.enable()
+        elif event.type == pygame_gui.UI_BUTTON_PRESSED and \
+            event.ui_object_id == "#submission_panel.#copy_contents_button" and \
+            event.ui_element == self.copy_contents_button:
+            pyperclip.copy(self.submission_text.html_text.replace('<br>','\n'))
+            message_thread = threading.Thread(target=self._show_message, args=['Copied!'])
+            message_thread.start()
+
+
+
+    
+    
 
 class BorgleApp:
     def __init__(self):
@@ -411,12 +600,19 @@ class BorgleApp:
         self.clock = pygame.time.Clock()
         self.is_running = True
         
-        self.game_panel = GamePanel()
+        #self.game_panel = GamePanel()
+        self.submission_panel = SubmissionPanel(self.window_size, self.ui_manager)
 
         self.login_window = LoginWindow(self.window_size, self.ui_manager)
     
+    def _auto_login(self):
+        ServerComm.connection_thread.join()
+        ServerComm.login("gefen", "zadok")
+
     def auto_login(self):
-        ServerComm.login("yoav", "shifman")
+        auto_login_thread = threading.Thread(target=self._auto_login)
+        auto_login_thread.start()
+        
 
     def run(self):
         while self.is_running:
@@ -442,6 +638,8 @@ class BorgleApp:
 # TITLE OF CANVAS
 
 if __name__ == '__main__':
+    #tk.Tk().withdraw()
     ServerComm.connect()
     app = BorgleApp()
+    app.auto_login()
     app.run()
