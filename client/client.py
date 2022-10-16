@@ -456,31 +456,85 @@ class RegisterWindow(UIWindow):
         super().update(time_delta)
 
 class GamePanel(UIPanel):
+    def __init__(self, app_window_size, ui_manager, bottom, centerx):
+        self.window_rect = pygame.Rect((0, 0), (bottom-100, bottom-100))
+        self.window_rect.centerx = centerx
+        self.window_rect.top = 75
+
+        super().__init__(self.window_rect,
+                         0,
+                         ui_manager,
+                         object_id='#game_panel')
+        
+        
+
+class FightPanel(UIPanel):
     def __init__(self, app_window_size, ui_manager):
         self.window_rect = pygame.Rect((0, 0), (app_window_size[0] / 2, app_window_size[1]))
         super().__init__(self.window_rect,
                          0,
                          ui_manager, 
-                         object_id='#game_panel')
+                         object_id='#fight_panel')
         
         self.game_surface_size = self.get_container().get_size()
+
         
-        self.fight_button_pos = (0, 0) #np.divide(np.subtract(self.game_surface_size, self.fight_button_size), (2, 1))
-        self.fight_button_rect = pygame.Rect(self.fight_button_pos, (300, 130))
-        self.fight_button_rect.bottom = -10
+        self.fight_button_horizontal_margin = 200
+        self.fight_button_vertical_margin = 75
+        self.fight_button_rect = pygame.Rect((0, 0), (self.window_rect.width / 2, 200))
+        self.fight_button_rect.bottomright = self.window_rect.bottomright
+        self.fight_button_center = self.fight_button_rect.center # save center
+        self.fight_button_rect.width -= self.fight_button_horizontal_margin
+        self.fight_button_rect.height -= self.fight_button_vertical_margin
+        self.fight_button_rect.center = self.fight_button_center # reset center to saved
+
         self.fight_button = UIButton(self.fight_button_rect,
-                                      'Fight',
-                                      manager=ui_manager,
-                                      container=self,
-                                      parent_element=self,
-                                      anchors={
-                                         'left': 'left',
-                                         'top': 'bottom',
-                                         'right': 'left',
-                                         'bottom': 'bottom',
-                                      },
-                                      object_id="#fight_button")
+                                     'Fight',
+                                     manager=ui_manager,
+                                     container=self,
+                                     parent_element=self,
+                                     object_id="#fight_button")
+        self.fight_button.disable()
         
+        self.select_enemy_label_rect = pygame.Rect((0, 0), (self.window_rect.width / 2, 40))
+        self.select_enemy_label_rect.bottomleft = self.window_rect.bottomleft
+        self.select_enemy_label_rect.y -= 160
+        self.select_enemy_label = UILabel(self.select_enemy_label_rect,
+                                     'Select Enemy:',
+                                     manager=ui_manager,
+                                     container=self,
+                                     parent_element=self,
+                                     object_id="#select_enemy_label")
+
+        self.enemy_selector_rect = pygame.Rect((0, 0), self.fight_button_rect.size)
+        self.enemy_selector_rect.centery = self.fight_button_rect.centery
+        self.enemy_selector_rect.centerx = self.select_enemy_label_rect.centerx
+        self.enemy_selector = UISelectionList(self.enemy_selector_rect,
+                                     ['yoav', 'gefen', 'yoa12v', 'g345efen', 'ysfdoav', 'gegfen', 'yoagggggggv', 'en', ],
+                                     allow_double_clicks=False,
+                                     manager=ui_manager,
+                                     container=self,
+                                     parent_element=self,
+                                     object_id="#enemy_selector")
+
+        self.game_panel = GamePanel(app_window_size, ui_manager, self.select_enemy_label_rect.top, self.window_rect.centerx)
+        
+    def process_event(self, event: pygame.event.Event) -> bool:
+        if event.type == pygame_gui.UI_BUTTON_PRESSED and \
+            event.ui_object_id == "#fight_panel.#fight_button" and \
+            event.ui_element == self.fight_button:
+            pass
+        elif event.type == pygame_gui.UI_SELECTION_LIST_NEW_SELECTION:
+            self.fight_button.enable()
+            self.fight_button.set_text(f"Fight {event.text}")
+            self.current_enemy = event.text
+        elif event.type == pygame_gui.UI_SELECTION_LIST_DROPPED_SELECTION and \
+            event.ui_object_id == "#fight_panel.#enemy_selector" and \
+            event.ui_element == self.enemy_selector:
+            if self.current_enemy == event.text:
+                self.fight_button.text = "Fight"
+                self.fight_button.disable()
+
 
 class SubmissionPanel(UIPanel):
     def __init__(self, app_window_size, ui_manager):
@@ -606,11 +660,6 @@ class SubmissionPanel(UIPanel):
             message_thread = threading.Thread(target=self._show_message, args=['Copied!'])
             message_thread.start()
 
-
-
-    
-    
-
 class BorgleApp:
     def __init__(self):
         pygame.init()
@@ -633,7 +682,7 @@ class BorgleApp:
         self.clock = pygame.time.Clock()
         self.is_running = True
         
-        #self.game_panel = GamePanel(self.window_size, self.ui_manager)
+        self.fight_panel = FightPanel(self.window_size, self.ui_manager)
         self.submission_panel = SubmissionPanel(self.window_size, self.ui_manager)
 
         self.login_window = LoginWindow(self.window_size, self.ui_manager)
