@@ -9,6 +9,7 @@ import hashlib
 from time import sleep
 from tkinter import font
 from turtle import st
+from xml.dom import ValidationErr
 import pygame
 import numpy as np
 import pygame_gui
@@ -119,16 +120,12 @@ class ServerComm:
         set_default_path_thread.start()
 
     def _submit(file_contents):
-        if file_contents != '':
-            ServerComm.client_socket.send(bytes([RequestType.SUBMIT.value]))
-            ServerComm.client_socket.send(len(file_contents).to_bytes(4,'little'))
-            ServerComm.client_socket.send(file_contents.encode())
-            response_code = ServerComm.client_socket.recv(1)[0]
-            response_msg = ServerComm.client_socket.recv(2048).decode()
-            print(f'Server sent response code {response_code} with response message: {response_msg}')
-        else:
-            response_code = 1
-            response_msg = 'Your algorithm is empty!'
+        ServerComm.client_socket.send(bytes([RequestType.SUBMIT.value]))
+        ServerComm.client_socket.send(len(file_contents).to_bytes(4,'little'))
+        ServerComm.client_socket.send(file_contents.encode())
+        response_code = ServerComm.client_socket.recv(1)[0]
+        response_msg = ServerComm.client_socket.recv(2048).decode()
+        print(f'Server sent response code {response_code} with response message: {response_msg}')
         post_action_finished(RequestType.SUBMIT, response_code, response_msg)
 
     def submit(file_contents):
@@ -515,6 +512,13 @@ class SubmissionPanel(UIPanel):
                                      parent_element=self,
                                      )
         
+    def validate_submission(self, contents) -> int:
+        if contents == '':
+            message_thread = threading.Thread(target=self._show_message, args=['Your algorithm is empty!'])
+            message_thread.start()
+            return 1
+        
+        return 0
 
     def _show_message(self, txt):
         self.message_label.set_text(txt)
@@ -546,7 +550,9 @@ class SubmissionPanel(UIPanel):
         elif event.type == pygame_gui.UI_BUTTON_PRESSED and \
             event.ui_object_id == "#submission_panel.#submit_button" and \
             event.ui_element == self.submit_button:
-            ServerComm.submit(self.submission_text.html_text.replace('<br>','\n'))
+            submission = self.submission_text.html_text.replace('<br>','\n')
+            if self.validate_submission(submission) == 0:
+                ServerComm.submit(submission)
         elif event.type == SERVER_ACTION_FINISHED and \
             event.action_type == RequestType.SUBMIT:
             message_thread = threading.Thread(target=self._show_message, args=[event.response])
