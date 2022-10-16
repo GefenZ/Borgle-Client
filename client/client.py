@@ -17,6 +17,7 @@ from enum import IntEnum
 
 from pygame_gui.ui_manager import UIManager
 from pygame_gui.elements import *
+from pygame_gui.windows import *
 import tkinter as tk
 from tkinter.filedialog import askopenfilename
 import pyperclip
@@ -43,6 +44,16 @@ def post_action_finished(action_type: RequestType, response_code, response):
     pygame.event.post(pygame.event.Event(SERVER_ACTION_FINISHED, event_data))
 
 class ServerComm:
+
+    def _recv_exact(socket, no_bytes):
+        # Helper function to recv n bytes or return None if EOF is hit
+        data = bytearray()
+        while len(data) < no_bytes:
+            packet = socket.recv(no_bytes - len(data))
+            if not packet:
+                return None
+            data.extend(packet)
+        return data
 
     def _connect():
         ServerComm.connected = False
@@ -188,7 +199,7 @@ class LoginWindow(UIWindow):
         self.set_blocking(True)
         self.close_window_button.is_enabled = False
         self.title_bar.is_enabled = False
-        game_surface_size = self.get_container().get_size()
+        self.game_surface_size = self.get_container().get_size()
         
         self.username_label = UILabel(pygame.Rect((30, 40), (-1, -1)),
                                       'Username',
@@ -196,7 +207,7 @@ class LoginWindow(UIWindow):
                                       container=self,
                                       parent_element=self)
 
-        self.username_et_size = (game_surface_size[0]-60,40)
+        self.username_et_size = (self.game_surface_size[0]-60,40)
         self.username_et = UITextEntryLine(pygame.Rect((0, 5), self.username_et_size),
                                            manager=ui_manager,
                                            container=self,
@@ -216,7 +227,7 @@ class LoginWindow(UIWindow):
                                       container=self,
                                       parent_element=self)
         
-        self.password_et_size = (game_surface_size[0]-60,40)
+        self.password_et_size = (self.game_surface_size[0]-60,40)
         self.password_et = UITextEntryLine(pygame.Rect((0, 0), self.password_et_size),
                                            manager=ui_manager,
                                            container=self,
@@ -232,7 +243,7 @@ class LoginWindow(UIWindow):
         self.password_et.set_text_hidden()
         
         self.login_button_size = (100,40)
-        self.login_button_pos = np.divide(np.subtract(game_surface_size, self.login_button_size), (2, 1.1))
+        self.login_button_pos = np.divide(np.subtract(self.game_surface_size, self.login_button_size), (2, 1.1))
         self.login_button = UIButton(pygame.Rect(self.login_button_pos, self.login_button_size),
                                      'Login',
                                      manager=ui_manager,
@@ -241,19 +252,17 @@ class LoginWindow(UIWindow):
                                      object_id="#login_button")
 
         self.register_now_rect = pygame.Rect((0, 0), (-1, -1))
-        self.register_now_rect.bottomright = (-140, -50)
+        self.register_now_rect.bottomright = (-10, -10)
         self.register_now_button = UIButton(self.register_now_rect,
                                             "Register Now",
                                             manager=ui_manager,
                                             container=self,
                                             parent_element=self,
                                             anchors={
-                                                'top': 'top',
-                                                'left': 'left',
-                                                'bottom': 'top',
-                                                'right': 'left',
-                                                'top_target': self,
-                                                'left_target': self
+                                                'left': 'right',
+                                                'top': 'bottom',
+                                                'right': 'right',
+                                                'bottom': 'bottom',
                                             },
                                             object_id="#register_now_button")
 
@@ -316,7 +325,7 @@ class RegisterWindow(UIWindow):
         self.set_blocking(True)
         self.close_window_button.is_enabled = False
         self.title_bar.is_enabled = False
-        game_surface_size = self.get_container().get_size()
+        self.game_surface_size = self.get_container().get_size()
         
         self.username_label = UILabel(pygame.Rect((30, 40), (-1, -1)),
                                       'Username',
@@ -324,7 +333,7 @@ class RegisterWindow(UIWindow):
                                       container=self,
                                       parent_element=self)
 
-        self.username_et_size = (game_surface_size[0]-60,40)
+        self.username_et_size = (self.game_surface_size[0]-60,40)
         self.username_et = UITextEntryLine(pygame.Rect((0, 5), self.username_et_size),
                                            manager=ui_manager,
                                            container=self,
@@ -344,7 +353,7 @@ class RegisterWindow(UIWindow):
                                       container=self,
                                       parent_element=self)
         
-        self.password_et_size = (game_surface_size[0]-60,40)
+        self.password_et_size = (self.game_surface_size[0]-60,40)
         self.password_et = UITextEntryLine(pygame.Rect((0, 0), self.password_et_size),
                                            manager=ui_manager,
                                            container=self,
@@ -365,30 +374,30 @@ class RegisterWindow(UIWindow):
                                       container=self,
                                       parent_element=self)
         
-        self.confirm_password_et_size = (game_surface_size[0]-60,40)
+        self.confirm_password_et_size = (self.game_surface_size[0]-60,40)
         self.confirm_password_et = UITextEntryLine(pygame.Rect((0, 0), self.confirm_password_et_size),
-                                           manager=ui_manager,
-                                           container=self,
-                                           parent_element=self,
-                                           anchors={
-                                               'top': 'top',
-                                               'left': 'right',
-                                               'bottom': 'top',
-                                               'right': 'right',
-                                               'top_target': self.confirm_password_label,
-                                               'right_target': self.confirm_password_label
-                                           })
+                                                   manager=ui_manager,
+                                                   container=self,
+                                                   parent_element=self,
+                                                   anchors={
+                                                       'top': 'top',
+                                                       'left': 'right',
+                                                       'bottom': 'top',
+                                                       'right': 'right',
+                                                       'top_target': self.confirm_password_label,
+                                                       'right_target': self.confirm_password_label
+                                                   })
         self.confirm_password_et.set_text_hidden()
         
         
-        self.register_button_size = (100,40)
-        self.register_button_pos = np.divide(np.subtract(game_surface_size, self.register_button_size), (2, 1.1))
+        self.register_button_size = (100, 40)
+        self.register_button_pos = np.divide(np.subtract(self.game_surface_size, self.register_button_size), (2, 1.1))
         self.register_button = UIButton(pygame.Rect(self.register_button_pos, self.register_button_size),
-                                     'Register',
-                                     manager=ui_manager,
-                                     container=self,
-                                     parent_element=self,
-                                     object_id="#register_button")
+                                        'Register',
+                                        manager=ui_manager,
+                                        container=self,
+                                        parent_element=self,
+                                        object_id="#register_button")
 
         self.message_label = UILabel(pygame.Rect((-self.confirm_password_et_size[0], 12), (-1, -1)),
                                      '',
@@ -405,21 +414,19 @@ class RegisterWindow(UIWindow):
                                      })
 
         self.login_rect = pygame.Rect((0, 0), (-1, -1))
-        self.login_rect.bottomright = (-150, -50)
+        self.login_rect.bottomright = (-10, -10)
         self.login_button = UIButton(self.login_rect,
-                                            "Login Instead",
-                                            manager=ui_manager,
-                                            container=self,
-                                            parent_element=self,
-                                            anchors={
-                                                'top': 'top',
-                                                'left': 'left',
-                                                'bottom': 'top',
-                                                'right': 'left',
-                                                'top_target': self,
-                                                'left_target': self
-                                            },
-                                            object_id="#login_button")
+                                     "Login Instead",
+                                     manager=ui_manager,
+                                     container=self,
+                                     parent_element=self,
+                                     anchors={
+                                        'left': 'right',
+                                        'top': 'bottom',
+                                        'right': 'right',
+                                        'bottom': 'bottom',
+                                     },
+                                     object_id="#login_button")
 
     def switch_to_login_window(self):
         self.hide()
@@ -449,54 +456,80 @@ class RegisterWindow(UIWindow):
         super().update(time_delta)
 
 class GamePanel(UIPanel):
-    pass
+    def __init__(self, app_window_size, ui_manager):
+        self.window_rect = pygame.Rect((0, 0), (app_window_size[0] / 2, app_window_size[1]))
+        super().__init__(self.window_rect,
+                         0,
+                         ui_manager, 
+                         object_id='#game_panel')
+        
+        self.game_surface_size = self.get_container().get_size()
+        
+        self.fight_button_pos = (0, 0) #np.divide(np.subtract(self.game_surface_size, self.fight_button_size), (2, 1))
+        self.fight_button_rect = pygame.Rect(self.fight_button_pos, (300, 130))
+        self.fight_button_rect.bottom = -10
+        self.fight_button = UIButton(self.fight_button_rect,
+                                      'Fight',
+                                      manager=ui_manager,
+                                      container=self,
+                                      parent_element=self,
+                                      anchors={
+                                         'left': 'left',
+                                         'top': 'bottom',
+                                         'right': 'left',
+                                         'bottom': 'bottom',
+                                      },
+                                      object_id="#fight_button")
+        
 
 class SubmissionPanel(UIPanel):
     def __init__(self, app_window_size, ui_manager):
-        self.window_size = (app_window_size[0]/2,app_window_size[1])
-        self.window_position = (app_window_size[0]/2,0)
-        super().__init__(pygame.Rect(self.window_position, self.window_size),0, ui_manager, 
-                        object_id='#submission_panel')
+        self.window_rect = pygame.Rect((app_window_size[0] / 2, 0), (app_window_size[0] / 2, app_window_size[1]))
+        super().__init__(self.window_rect,
+                         0,
+                         ui_manager, 
+                         object_id='#submission_panel')
         
-        game_surface_size = self.get_container().get_size()
+        self.game_surface_size = self.get_container().get_size()
 
-        self.open_file_button_size = (100,40)
-        self.open_file_button_pos = np.divide(np.subtract(game_surface_size, self.open_file_button_size), (7, 1))
+        self.open_file_button_size = (100, 40)
+        self.open_file_button_pos = np.divide(np.subtract(self.game_surface_size, self.open_file_button_size), (7, 1))
         self.open_file_button = UIButton(pygame.Rect(self.open_file_button_pos, self.open_file_button_size),
-                                        'Open File',
-                                        manager=ui_manager,
-                                        container=self,
-                                        parent_element=self,
-                                        object_id="#open_file_button")
+                                         'Open File',
+                                         manager=ui_manager,
+                                         container=self,
+                                         parent_element=self,
+                                         object_id="#open_file_button")
         
-        self.submit_button_size = (100,40)
-        self.submit_button_pos = np.divide(np.subtract(game_surface_size, self.submit_button_size), (3, 1))
+        self.submit_button_size = (100, 40)
+        self.submit_button_pos = np.divide(np.subtract(self.game_surface_size, self.submit_button_size), (3, 1))
         self.submit_button = UIButton(pygame.Rect(self.submit_button_pos, self.submit_button_size),
-                                        'Submit',
-                                        manager=ui_manager,
-                                        container=self,
-                                        parent_element=self,
-                                        object_id="#submit_button")
+                                      'Submit',
+                                      manager=ui_manager,
+                                      container=self,
+                                      parent_element=self,
+                                      object_id="#submit_button")
 
-        self.load_last_submit_button_size = (200,40)
-        self.load_last_submit_button_pos = np.divide(np.subtract(game_surface_size, self.load_last_submit_button_size), (1.65, 1))
+        self.load_last_submit_button_size = (200, 40)
+        self.load_last_submit_button_pos = np.divide(np.subtract(self.game_surface_size, self.load_last_submit_button_size), (1.65, 1))
         self.load_last_submit_button = UIButton(pygame.Rect(self.load_last_submit_button_pos, self.load_last_submit_button_size),
-                                        'Load Last Submission',
-                                        manager=ui_manager,
-                                        container=self,
-                                        parent_element=self,
-                                        object_id="#load_last_submission_button")
-        self.copy_contents_button_size = (150,40)
-        self.copy_contents_button_pos = np.divide(np.subtract(game_surface_size, self.copy_contents_button_size), (1.1, 1))
-        self.copy_contents_button = UIButton(pygame.Rect(self.copy_contents_button_pos, self.copy_contents_button_size),
-                                        'Copy Contents',
-                                        manager=ui_manager,
-                                        container=self,
-                                        parent_element=self,
-                                        object_id="#copy_contents_button")
+                                                'Load Last Submission',
+                                                manager=ui_manager,
+                                                container=self,
+                                                parent_element=self,
+                                                object_id="#load_last_submission_button")
         
-        self.submission_text_size = (self.window_size[0]-100,self.window_size[1]-100)
-        self.submission_text_pos = (50,30)
+        self.copy_contents_button_size = (150, 40)
+        self.copy_contents_button_pos = np.divide(np.subtract(self.game_surface_size, self.copy_contents_button_size), (1.1, 1))
+        self.copy_contents_button = UIButton(pygame.Rect(self.copy_contents_button_pos, self.copy_contents_button_size),
+                                             'Copy Contents',
+                                             manager=ui_manager,
+                                             container=self,
+                                             parent_element=self,
+                                             object_id="#copy_contents_button")
+        
+        self.submission_text_size = (self.window_rect.width - 100, self.window_rect.height - 100)
+        self.submission_text_pos = (50, 30)
         self.submission_text = UITextBox('', pygame.Rect(self.submission_text_pos, self.submission_text_size),
                                             manager=ui_manager,
                                             container=self,
@@ -504,7 +537,7 @@ class SubmissionPanel(UIPanel):
                                             object_id="submission_text")
 
 
-        self.message_label_pos = (self.submission_text_pos[0] + self.submission_text_size[0]/2 - 50, self.submission_text_pos[1] + self.submission_text_size[1] ) 
+        self.message_label_pos = (self.submission_text_pos[0] + self.submission_text_size[0] / 2 - 50, self.submission_text_pos[1] + self.submission_text_size[1]) 
         self.message_label = UILabel(pygame.Rect(self.message_label_pos, (-1, -1)),
                                      '',
                                      manager=ui_manager,
@@ -600,7 +633,7 @@ class BorgleApp:
         self.clock = pygame.time.Clock()
         self.is_running = True
         
-        #self.game_panel = GamePanel()
+        #self.game_panel = GamePanel(self.window_size, self.ui_manager)
         self.submission_panel = SubmissionPanel(self.window_size, self.ui_manager)
 
         self.login_window = LoginWindow(self.window_size, self.ui_manager)
@@ -638,7 +671,7 @@ class BorgleApp:
 # TITLE OF CANVAS
 
 if __name__ == '__main__':
-    #tk.Tk().withdraw()
+    tk.Tk().withdraw()
     ServerComm.connect()
     app = BorgleApp()
     app.auto_login()
