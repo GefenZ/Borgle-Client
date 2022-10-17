@@ -41,7 +41,7 @@ def post_action_finished(action_type: RequestType, response_code, response):
 class ServerComm:
 
     def _recv_exact(socket, no_bytes):
-        # Helper function to recv n bytes or return None if EOF is hit
+        # Helper function to recv no_bytes bytes or return None if EOF is hit
         data = bytearray()
         while len(data) < no_bytes:
             packet = socket.recv(no_bytes - len(data))
@@ -49,6 +49,18 @@ class ServerComm:
                 return None
             data.extend(packet)
         return data
+
+    def _perform_actions():
+        while len(ServerComm.actions_queue) > 0:
+            action_fp, args = ServerComm.actions_queue[0]
+            action_fp(*args)
+            ServerComm.actions_queue.pop(0)
+
+    def _add_action(action_fp, args=()):
+        ServerComm.actions_queue.append((action_fp, args))
+        if len(ServerComm.actions_queue) == 1:
+            ServerComm.actions_thread = threading.Thread(target=ServerComm._perform_actions)
+            ServerComm.actions_thread.start()
 
     def _connect():
         ServerComm.connected = False
@@ -69,93 +81,80 @@ class ServerComm:
             print(str(e))
     
     def connect():
-        if not ServerComm.connected:
-            ServerComm.connection_thread = threading.Thread(target=ServerComm._connect)
-            ServerComm.connection_thread.start()
+        ServerComm._add_action(ServerComm._connect)
     
     def _authenticate(username, password, action_type):
         sha_encryption = hashlib.new('sha256')
         sha_encryption.update(password.encode())
         ServerComm.client_socket.send(bytes([action_type.value]))
         ServerComm.client_socket.send(f'{username} {sha_encryption.hexdigest()}'.encode())
-        response_code = ServerComm.client_socket.recv(1)[0]
+        response_code = ServerComm._recv_exact(ServerComm.client_socket, 1)[0]
         response_msg = ServerComm.client_socket.recv(1024).decode()
         print(f'Server sent response code {response_code} with response message: {response_msg}')
         post_action_finished(action_type, response_code, response_msg)
 
     def login(username, password):
-        login_thread = threading.Thread(target=ServerComm._authenticate, args=(username, password, RequestType.LOGIN))
-        login_thread.start()
+        ServerComm._add_action(ServerComm._authenticate, args=(username, password, RequestType.LOGIN))
 
     def register(username, password):
-        register_thread = threading.Thread(target=ServerComm._authenticate, args=(username, password, RequestType.REGISTER))
-        register_thread.start()
+        ServerComm._add_action(ServerComm._authenticate, args=(username, password, RequestType.REGISTER))
 
     def _get_rivals_list():
         ServerComm.client_socket.send(bytes([RequestType.RIVALS_LIST.value]))
-        response_code = ServerComm.client_socket.recv(1)[0]
+        response_code = ServerComm._recv_exact(ServerComm.client_socket, 1)[0]
         response_msg = ServerComm.client_socket.recv(2048).decode()
         print(f'Server sent response code {response_code} with response message: {response_msg}')
         post_action_finished(RequestType.RIVALS_LIST, response_code, response_msg)
 
     def get_rivals_list():
-        get_rivals_list_thread = threading.Thread(target=ServerComm._get_rivals_list)
-        get_rivals_list_thread.start()
+        ServerComm._add_action(ServerComm._get_rivals_list)
 
     def _get_default_path():
         ServerComm.client_socket.send(bytes([RequestType.GET_DEFAULT_PATH.value]))
-        response_code = ServerComm.client_socket.recv(1)[0]
+        response_code = ServerComm._recv_exact(ServerComm.client_socket, 1)[0]
         response_msg = ServerComm.client_socket.recv(2048).decode()
         print(f'Server sent response code {response_code} with response message: {response_msg}')
         post_action_finished(RequestType.GET_DEFAULT_PATH, response_code, response_msg)
 
     def get_default_path():
-        get_default_path_thread = threading.Thread(target=ServerComm._get_default_path)
-        get_default_path_thread.start()
+        ServerComm._add_action(ServerComm._get_default_path)
 
     def _set_default_path(new_path):
         ServerComm.client_socket.send(bytes([RequestType.SET_DEFAULT_PATH.value]))
         ServerComm.client_socket.send(new_path.encode())
-        response_code = ServerComm.client_socket.recv(1)[0]
+        response_code = ServerComm._recv_exact(ServerComm.client_socket, 1)[0]
         response_msg = ServerComm.client_socket.recv(2048).decode()
         print(f'Server sent response code {response_code} with response message: {response_msg}')
         post_action_finished(RequestType.SET_DEFAULT_PATH, response_code, response_msg)
 
     def set_default_path(new_path):
-        set_default_path_thread = threading.Thread(target=ServerComm._set_default_path, args=[new_path])
-        set_default_path_thread.start()
+        ServerComm._add_action(ServerComm._set_default_path, args=[new_path])
 
     def _submit(file_contents):
         ServerComm.client_socket.send(bytes([RequestType.SUBMIT.value]))
         ServerComm.client_socket.send(len(file_contents).to_bytes(4,'little'))
         ServerComm.client_socket.send(file_contents.encode())
-        response_code = ServerComm.client_socket.recv(1)[0]
+        response_code = ServerComm._recv_exact(ServerComm.client_socket, 1)[0]
         response_msg = ServerComm.client_socket.recv(2048).decode()
         print(f'Server sent response code {response_code} with response message: {response_msg}')
         post_action_finished(RequestType.SUBMIT, response_code, response_msg)
 
     def submit(file_contents):
-        submit_thread = threading.Thread(target=ServerComm._submit, args=[file_contents])
-        submit_thread.start()
+        ServerComm._add_action(ServerComm._submit, args=[file_contents])
 
     def _load_last_submission():
         ServerComm.client_socket.send(bytes([RequestType.LOAD_LAST_SUBMISSION.value]))
-        response_code = ServerComm.client_socket.recv(1)[0]
-        size = int.from_bytes(ServerComm.client_socket.recv(4), 'little')
-        byte_counter = 0
-        contents = ''
-        while byte_counter < size:
-            data = ServerComm.client_socket.recv(1024).decode()
-            byte_counter += len(data)
-            contents += data
-        response_msg = contents
+        response_code = ServerComm._recv_exact(ServerComm.client_socket, 1)[0]
+        size = int.from_bytes(ServerComm._recv_exact(ServerComm.client_socket, 4), 'little')
+        data = ServerComm._recv_exact(ServerComm.client_socket, size)
+        response_msg = data.decode()
         post_action_finished(RequestType.LOAD_LAST_SUBMISSION, response_code, response_msg)
 
     def load_last_submission():
-        load_last_submission_thread = threading.Thread(target=ServerComm._load_last_submission)
-        load_last_submission_thread.start()
+        ServerComm._add_action(ServerComm._load_last_submission)
 
 ServerComm.connected = False
+ServerComm.actions_queue = []
 
 def validate_cradentials(username, password, confirm_password=None):
     username_charset = list(string.ascii_letters + string.digits + '_')
@@ -505,7 +504,7 @@ class FightPanel(UIPanel):
         self.enemy_selector_rect.centery = self.fight_button_rect.centery
         self.enemy_selector_rect.centerx = self.select_enemy_label_rect.centerx
         self.enemy_selector = UISelectionList(self.enemy_selector_rect,
-                                     ['yoav', 'gefen', 'yoa12v', 'g345efen', 'ysfdoav', 'gegfen', 'yoagggggggv', 'en', ],
+                                     [],
                                      allow_double_clicks=False,
                                      manager=ui_manager,
                                      container=self,
@@ -529,6 +528,14 @@ class FightPanel(UIPanel):
             if self.current_enemy == event.text:
                 self.fight_button.text = "Fight"
                 self.fight_button.disable()
+        elif event.type == SERVER_ACTION_FINISHED and \
+            event.action_type == RequestType.LOGIN and \
+            event.response_code == 0:
+            ServerComm.get_rivals_list()
+        elif event.type == SERVER_ACTION_FINISHED and \
+            event.action_type == RequestType.RIVALS_LIST and \
+            event.response_code == 0:
+            self.enemy_selector.set_item_list(event.response.split(','))
 
 
 class SubmissionPanel(UIPanel):
@@ -639,12 +646,11 @@ class SubmissionPanel(UIPanel):
             ServerComm.get_default_path()
         elif event.type == SERVER_ACTION_FINISHED and \
             event.action_type == RequestType.GET_DEFAULT_PATH:
-            if event.response_code == 0:
-                default_path = event.response
-                if default_path == "" or not os.path.exists(default_path):
-                    self.create_file_dialog()
-                else:
-                    self.create_file_dialog(inital_path=default_path)
+            default_path = event.response
+            if event.response_code != 0 or not os.path.exists(default_path):
+                self.create_file_dialog()
+            else:
+                self.create_file_dialog(inital_path=default_path)
             
             self.open_file_button.enable()
         elif event.type == UI_FILE_DIALOG_PATH_PICKED:
@@ -655,6 +661,10 @@ class SubmissionPanel(UIPanel):
                     text = text.replace('\n', '<br>')
                     self.submission_text.set_text(text)
                 ServerComm.set_default_path(path)
+        elif event.type == SERVER_ACTION_FINISHED and \
+            event.action_type == RequestType.LOGIN and \
+            event.response_code == 0:
+            ServerComm.load_last_submission()
         elif event.type == pygame_gui.UI_BUTTON_PRESSED and \
             event.ui_object_id == "#submission_panel.#submit_button" and \
             event.ui_element == self.submit_button:
@@ -709,8 +719,7 @@ class BorgleApp:
         self.login_window = LoginWindow(self.window_size, self.ui_manager)
     
     def _auto_login(self):
-        ServerComm.connection_thread.join()
-        ServerComm.login("gefen", "zadok")
+        ServerComm.login("yoav", "shifman")
 
     def auto_login(self):
         auto_login_thread = threading.Thread(target=self._auto_login)
@@ -743,5 +752,5 @@ class BorgleApp:
 if __name__ == '__main__':
     ServerComm.connect()
     app = BorgleApp()
-    app.auto_login()
+    # app.auto_login()
     app.run()
